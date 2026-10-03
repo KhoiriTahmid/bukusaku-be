@@ -6,10 +6,6 @@ import {
 } from '../../helpers/pagination.helper';
 
 export class RoleFindAllRequest extends DefaultFindAllRequest {
-  @ApiPropertyOptional({ description: 'Search by name' })
-  @IsOptional()
-  readonly search?: string;
-
   @ApiPropertyOptional({ description: 'Set to "true" to list archived only' })
   @IsOptional()
   readonly isDeleted?: string;

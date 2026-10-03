@@ -7,6 +7,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: ['verbose', 'log', 'warn', 'error'],
   });
+  app.enableCors({ origin: true, exposedHeaders: ['*'] });
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle(appJSON.name)

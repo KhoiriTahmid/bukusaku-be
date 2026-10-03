@@ -14,6 +14,10 @@ import {
   UserFindOneResponse,
   UserUpdateRequest,
 } from './user.contract';
+import {
+  ChangeLogService,
+  ChangeLogAction,
+} from '../change-log/change-log.module';
 
 const CONTEXT = 'user.service';
 const DEFAULT_LIMIT = 10;
@@ -27,6 +31,7 @@ export class UserService {
     private readonly userRepository: typeof UserModel,
     @InjectModel(RoleModel)
     private readonly roleRepository: typeof RoleModel,
+    private readonly changeLogService: ChangeLogService,
   ) {}
 
   async findAll(params: UserFindAllRequest): Promise<UserFindAllResponse> {
@@ -70,11 +75,11 @@ export class UserService {
 
       const { count, rows } = await this.userRepository.findAndCountAll({
         where,
-        attributes: { exclude: ['password'] },
+        attributes: { exclude: ['password', 'refreshToken'] },
         include: [
           {
             model: RoleModel,
-            attributes: ['roleId', 'name'],
+            attributes: ['roleId', 'name', 'description', 'permissions'],
             paranoid: false,
           },
         ],
@@ -104,14 +109,13 @@ export class UserService {
       Logger.log('--ENTER FIND ONE USER SERVICE--', CONTEXT);
       Logger.log('find one user service id:' + userId, CONTEXT);
 
-      // paranoid: false so archived users can still be looked up
       const result = await this.userRepository.findOne({
         where: { userId },
-        attributes: { exclude: ['password'] },
+        attributes: { exclude: ['password', 'refreshToken'] },
         include: [
           {
             model: RoleModel,
-            attributes: ['roleId', 'name'],
+            attributes: ['roleId', 'name', 'description', 'permissions'],
             paranoid: false,
           },
         ],
@@ -133,15 +137,50 @@ export class UserService {
     }
   }
 
-  async create(params: UserCreateRequest): Promise<UserFindOneResponse> {
+  async findOneByEmail(
+    email: string,
+  ): Promise<UserFindOneResponse & { password: string }> {
+    try {
+      Logger.log('--ENTER FIND ONE BY EMAIL USER SERVICE--', CONTEXT);
+      Logger.log('find one user service email:' + email, CONTEXT);
+
+      const result = await this.userRepository.findOne({
+        where: { email },
+        include: [
+          {
+            model: RoleModel,
+            paranoid: false,
+          },
+        ],
+        paranoid: false,
+      });
+
+      if (!result) {
+        return Promise.reject({
+          statusCode: 404,
+          code: 'user_not_found',
+          message: 'User not found',
+        });
+      }
+
+      return result.get({ plain: true });
+    } catch (error) {
+      Logger.error('Find one user error:' + errorText(error), CONTEXT);
+      return Promise.reject(error);
+    }
+  }
+
+  async create(
+    params: UserCreateRequest,
+    userId: string,
+    metaUser: any,
+  ): Promise<UserFindOneResponse> {
     try {
       Logger.log('--ENTER CREATE USER SERVICE--', CONTEXT);
-      // Do not log the whole params object: it contains the plain password
       Logger.log('create user service email:' + params.email, CONTEXT);
 
       const email = params.email.trim().toLowerCase();
 
-      // include archived users, the email unique constraint covers them too
       const emailTaken = await this.userRepository.findOne({
         where: { email },
         attributes: ['userId'],
@@ -179,6 +218,17 @@ export class UserService {
 
       const { password, ...response } = result.get({ plain: true });
 
+      // Log change
+      await this.changeLogService.create({
+        userId: userId,
+        metaUser: metaUser,
+        tableName: 'users',
+        externalId: response.userId,
+        action: ChangeLogAction.CREATE,
+        oldValues: null,
+        newValues: response,
+      });
+
       return response;
     } catch (error) {
       Logger.error('Create user error:' + errorText(error), CONTEXT);
@@ -187,14 +237,16 @@ export class UserService {
   }
 
   async update(
-    userId: string,
+    targetUserId: string,
     params: UserUpdateRequest,
+    userId: string,
+    metaUser: any,
   ): Promise<UserFindOneResponse> {
     try {
       Logger.log('--ENTER UPDATE USER SERVICE--', CONTEXT);
-      Logger.log('update user service id:' + userId, CONTEXT);
+      Logger.log('update user service id:' + targetUserId, CONTEXT);
 
-      if (!userId) {
+      if (!targetUserId) {
         return Promise.reject({
           statusCode: 400,
           code: 'validation_error',
@@ -203,7 +255,7 @@ export class UserService {
       }
 
       const result = await this.userRepository.findOne({
-        where: { userId },
+        where: { userId: targetUserId },
         paranoid: false,
       });
 
@@ -226,7 +278,7 @@ export class UserService {
 
         if (email !== result.email) {
           const emailTaken = await this.userRepository.findOne({
-            where: { email, userId: { [Op.ne]: userId } },
+            where: { email, userId: { [Op.ne]: targetUserId } },
             attributes: ['userId'],
             paranoid: false,
           });
@@ -263,9 +315,23 @@ export class UserService {
         payload.password = await bcrypt.hash(params.password, SALT_ROUNDS);
       }
 
+      const oldValues = result.get({ plain: true });
+      delete oldValues.password;
+
       const updated = await result.update(payload);
 
       const { password, ...response } = updated.get({ plain: true });
+
+      // Log change
+      await this.changeLogService.create({
+        userId,
+        metaUser,
+        tableName: 'users',
+        externalId: response.userId,
+        action: ChangeLogAction.UPDATE,
+        oldValues,
+        newValues: response,
+      });
 
       return response;
     } catch (error) {
@@ -274,12 +340,27 @@ export class UserService {
     }
   }
 
-  async restore(userId: string): Promise<UserActionResponse> {
+  async updateRefreshToken(userId: string, refreshToken: string | null) {
+    const refreshTokenHash = refreshToken
+      ? await bcrypt.hash(refreshToken, 10)
+      : null;
+
+    await this.userRepository.update(
+      { refreshToken: refreshTokenHash },
+      { where: { userId } },
+    );
+  }
+
+  async restore(
+    targetUserId: string,
+    userId: string,
+    metaUser: any,
+  ): Promise<UserActionResponse> {
     try {
       Logger.log('--ENTER RESTORE USER SERVICE--', CONTEXT);
-      Logger.log('restore user service id:' + userId, CONTEXT);
+      Logger.log('restore user service id:' + targetUserId, CONTEXT);
 
-      if (!userId) {
+      if (!targetUserId) {
         return Promise.reject({
           statusCode: 400,
           code: 'validation_error',
@@ -287,7 +368,7 @@ export class UserService {
         });
       }
 
-      const archived = await this.findOne(userId);
+      const archived = await this.findOne(targetUserId);
 
       if (!archived.deletedAt) {
         return Promise.reject({
@@ -297,7 +378,18 @@ export class UserService {
         });
       }
 
-      await this.userRepository.restore({ where: { userId } });
+      await this.userRepository.restore({ where: { userId: targetUserId } });
+
+      // Log change
+      await this.changeLogService.create({
+        userId,
+        metaUser,
+        tableName: 'users',
+        externalId: targetUserId,
+        action: ChangeLogAction.RESTORE,
+        oldValues: null,
+        newValues: archived,
+      });
 
       return {
         isSuccess: true,
@@ -310,14 +402,16 @@ export class UserService {
   }
 
   async delete(
-    userId: string,
+    targetUserId: string,
     isForceDelete = false,
+    userId: string,
+    metaUser: any,
   ): Promise<UserActionResponse> {
     try {
       Logger.log('--ENTER DELETE USER SERVICE--', CONTEXT);
-      Logger.log('delete user service id:' + userId, CONTEXT);
+      Logger.log('delete user service id:' + targetUserId, CONTEXT);
 
-      if (!userId) {
+      if (!targetUserId) {
         return Promise.reject({
           statusCode: 400,
           code: 'validation_error',
@@ -325,7 +419,7 @@ export class UserService {
         });
       }
 
-      const existing = await this.findOne(userId);
+      const existing = await this.findOne(targetUserId);
 
       if (existing.deletedAt && !isForceDelete) {
         return Promise.reject({
@@ -336,11 +430,24 @@ export class UserService {
       }
 
       const result = await this.userRepository.destroy({
-        where: { userId },
+        where: { userId: targetUserId },
         force: isForceDelete,
       });
 
       Logger.log(`Deleted ${result} user successfully`, CONTEXT);
+
+      // Log change
+      await this.changeLogService.create({
+        userId,
+        metaUser,
+        tableName: 'users',
+        externalId: targetUserId,
+        action: isForceDelete
+          ? ChangeLogAction.HARD_DELETE
+          : ChangeLogAction.SOFT_DELETE,
+        oldValues: existing,
+        newValues: null,
+      });
 
       return {
         isSuccess: true,
@@ -351,7 +458,6 @@ export class UserService {
     } catch (error) {
       Logger.error('Delete user error:' + errorText(error), CONTEXT);
 
-      // Hard delete is blocked by ON DELETE RESTRICT when the user has transactions
       if (error?.name === 'SequelizeForeignKeyConstraintError') {
         return Promise.reject({
           statusCode: 409,

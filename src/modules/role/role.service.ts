@@ -1,4 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
+import {
+  ChangeLogService,
+  ChangeLogAction,
+} from '../change-log/change-log.module';
 import { InjectModel } from '@nestjs/sequelize';
 import { Op } from 'sequelize';
 
@@ -25,6 +29,7 @@ export class RoleService {
   constructor(
     @InjectModel(RoleModel)
     private readonly roleRepository: typeof RoleModel,
+    private readonly changeLogService: ChangeLogService,
   ) {}
 
   async findAll(params: RoleFindAllRequest): Promise<RoleFindAllResponse> {
@@ -107,7 +112,11 @@ export class RoleService {
     }
   }
 
-  async create(params: CreateRoleRequest): Promise<RoleResponse> {
+  async create(
+    params: CreateRoleRequest,
+    userId: string,
+    metaUser: any,
+  ): Promise<RoleResponse> {
     try {
       Logger.log('--ENTER CREATE ROLE SERVICE--', CONTEXT);
       Logger.log('create role service name:' + params.name, CONTEXT);
@@ -136,7 +145,18 @@ export class RoleService {
 
       Logger.log('Created role successfully, id:' + result.roleId, CONTEXT);
 
-      return result.get({ plain: true });
+      const response = result.get({ plain: true });
+
+      await this.changeLogService.create({
+        userId: userId,
+        metaUser: metaUser,
+        tableName: 'roles',
+        externalId: response.roleId,
+        action: ChangeLogAction.CREATE,
+        oldValues: null,
+        newValues: response,
+      });
+      return response;
     } catch (error) {
       Logger.error('Create role error:' + errorText(error), CONTEXT);
       return Promise.reject(error);
@@ -146,6 +166,8 @@ export class RoleService {
   async update(
     roleId: string,
     params: UpdateRoleRequest,
+    userId: string,
+    metaUser: any,
   ): Promise<RoleResponse> {
     try {
       Logger.log('--ENTER UPDATE ROLE SERVICE--', CONTEXT);
@@ -207,16 +229,32 @@ export class RoleService {
         payload.permissions = params.permissions;
       }
 
+      const oldValues = result.get({ plain: true });
       const updated = await result.update(payload);
+      const response = updated.get({ plain: true });
 
-      return updated.get({ plain: true });
+      await this.changeLogService.create({
+        userId,
+        metaUser,
+        tableName: 'roles',
+        externalId: response.roleId,
+        action: ChangeLogAction.UPDATE,
+        oldValues,
+        newValues: response,
+      });
+
+      return response;
     } catch (error) {
       Logger.error('Update role error:' + errorText(error), CONTEXT);
       return Promise.reject(error);
     }
   }
 
-  async restore(roleId: string): Promise<RoleActionResponse> {
+  async restore(
+    roleId: string,
+    userId: string,
+    metaUser: any,
+  ): Promise<RoleActionResponse> {
     try {
       Logger.log('--ENTER RESTORE ROLE SERVICE--', CONTEXT);
       Logger.log('restore role service id:' + roleId, CONTEXT);
@@ -241,6 +279,16 @@ export class RoleService {
 
       await this.roleRepository.restore({ where: { roleId } });
 
+      await this.changeLogService.create({
+        userId,
+        metaUser,
+        tableName: 'roles',
+        externalId: roleId,
+        action: ChangeLogAction.RESTORE,
+        oldValues: null,
+        newValues: archived,
+      });
+
       return {
         isSuccess: true,
         message: 'Role restored successfully',
@@ -253,6 +301,8 @@ export class RoleService {
 
   async delete(
     roleId: string,
+    userId: string,
+    metaUser: any,
     options?: OptionDeleteRoleRequest,
   ): Promise<RoleActionResponse> {
     try {
@@ -282,6 +332,18 @@ export class RoleService {
       const result = await this.roleRepository.destroy({
         where: { roleId },
         force: isForceDelete,
+      });
+
+      await this.changeLogService.create({
+        userId,
+        metaUser,
+        tableName: 'roles',
+        externalId: roleId,
+        action: isForceDelete
+          ? ChangeLogAction.HARD_DELETE
+          : ChangeLogAction.SOFT_DELETE,
+        oldValues: existing,
+        newValues: null,
       });
 
       Logger.log(`Deleted ${result} role successfully`, CONTEXT);

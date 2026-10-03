@@ -10,8 +10,15 @@ import {
   Patch,
   Post,
   Query,
+  Request,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 
 import {
   CreateRoleRequest,
@@ -24,6 +31,9 @@ import {
 } from './role.contract';
 
 import { RoleService } from './role.service';
+import { AuthGuard } from '@nestjs/passport';
+import { PermissionsGuard } from '../authentication/guards/permissions.guard';
+import { Permissions } from '../authentication/decorators/permissions.decorator';
 
 const CONTEXT = 'role.controller';
 
@@ -35,6 +45,9 @@ export class RoleController {
   @ApiOperation({ summary: 'Get all roles' })
   @Get()
   @ApiOkResponse({ type: RoleFindAllResponse })
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @Permissions('ROLES.LIST')
   async findAll(
     @Query() params: RoleFindAllRequest,
   ): Promise<RoleFindAllResponse> {
@@ -55,6 +68,9 @@ export class RoleController {
   @ApiOperation({ summary: 'Get one role' })
   @Get(':roleId')
   @ApiOkResponse({ type: RoleResponse })
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @Permissions('ROLES.LIST')
   async findOne(@Param('roleId') roleId: string): Promise<RoleResponse> {
     try {
       Logger.log('--ENTER FIND ONE ROLE--', CONTEXT);
@@ -73,11 +89,17 @@ export class RoleController {
   @ApiOperation({ summary: 'Create new role' })
   @Post()
   @ApiOkResponse({ type: RoleResponse })
-  async create(@Body() params: CreateRoleRequest): Promise<RoleResponse> {
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @Permissions('ROLES.CREATE')
+  async create(
+    @Body() params: CreateRoleRequest,
+    @Request() req,
+  ): Promise<RoleResponse> {
     try {
       Logger.log('--ENTER CREATE ROLE--', CONTEXT);
 
-      return await this.roleService.create(params);
+      return await this.roleService.create(params, req.user.userId, req.user);
     } catch (error) {
       Logger.error('Create role error: ' + JSON.stringify(error), CONTEXT);
 
@@ -91,14 +113,23 @@ export class RoleController {
   @ApiOperation({ summary: 'Update role' })
   @Patch(':roleId')
   @ApiOkResponse({ type: RoleResponse })
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @Permissions('ROLES.UPDATE')
   async update(
+    @Request() req,
     @Param('roleId') roleId: string,
     @Body() params: UpdateRoleRequest,
   ): Promise<RoleResponse> {
     try {
       Logger.log('--ENTER UPDATE ROLE--', CONTEXT);
 
-      return await this.roleService.update(roleId, params);
+      return await this.roleService.update(
+        roleId,
+        params,
+        req.user.userId,
+        req.user,
+      );
     } catch (error) {
       Logger.error('Update role error: ' + JSON.stringify(error), CONTEXT);
 
@@ -112,11 +143,21 @@ export class RoleController {
   @ApiOperation({ summary: 'Restore archived role' })
   @Post(':roleId/restore')
   @ApiOkResponse({ type: RoleActionResponse })
-  async restore(@Param('roleId') roleId: string): Promise<RoleActionResponse> {
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @Permissions('ROLES.DELETE')
+  async restore(
+    @Param('roleId') roleId: string,
+    @Request() req,
+  ): Promise<RoleActionResponse> {
     try {
       Logger.log('--ENTER RESTORE ROLE--', CONTEXT);
 
-      const result = await this.roleService.restore(roleId);
+      const result = await this.roleService.restore(
+        roleId,
+        req.user.userId,
+        req.user,
+      );
 
       Logger.log(
         'Role restored successfully: ' + JSON.stringify(result),
@@ -139,8 +180,12 @@ export class RoleController {
   })
   @Delete(':roleId')
   @ApiOkResponse({ type: RoleActionResponse })
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @Permissions('ROLES.DELETE')
   async delete(
     @Param('roleId') roleId: string,
+    @Request() req,
     @Query('forceDelete') forceDelete?: string,
   ): Promise<RoleActionResponse> {
     try {
@@ -150,7 +195,12 @@ export class RoleController {
         forceDelete: String(forceDelete) === 'true',
       };
 
-      const result = await this.roleService.delete(roleId, options);
+      const result = await this.roleService.delete(
+        roleId,
+        req.user.userId,
+        req.user,
+        options,
+      );
 
       Logger.log(
         'Role deleted successfully: ' + JSON.stringify(result),

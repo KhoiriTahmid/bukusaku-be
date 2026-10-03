@@ -1,12 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
-import { Op } from 'sequelize';
 
 import { errorText } from '../../helpers/error.helper';
 import { buildPagination } from '../../helpers/pagination.helper';
 
 import { UserModel } from '../user/user.entity';
 import { TransactionModel } from './transaction.entity';
+import { Op, fn, col, literal } from 'sequelize';
 
 import {
   CreateTransactionRequest,
@@ -17,6 +17,8 @@ import {
   TransactionResponse,
   UpdateTransactionRequest,
 } from './transaction.contract';
+
+type Row = { month?: string; type?: string; total: string };
 
 const CONTEXT = 'transaction.service';
 const DEFAULT_LIMIT = 10;
@@ -51,6 +53,18 @@ export class TransactionService {
         where.type = params.type;
       }
 
+      if (params.category) {
+        where.category = params.category;
+      }
+
+      if (params.search?.trim()) {
+        const search = params.search?.trim();
+        where = {
+          ...where,
+          [Op.or]: [{ description: { [Op.iLike]: `%${search}%` } }],
+        };
+      }
+
       const isArchiveMode = params.isDeleted === 'true';
 
       if (isArchiveMode) {
@@ -73,6 +87,7 @@ export class TransactionService {
         limit,
         offset,
         order: [['transactionDate', 'DESC']],
+        logging: console.log,
       });
 
       const results = rows.map((item) => item.get({ plain: true }));
@@ -112,6 +127,78 @@ export class TransactionService {
       Logger.error('Find one transaction error:' + errorText(error), CONTEXT);
       return Promise.reject(error);
     }
+  }
+
+  async getSummary(userId: string, category?: string, monthsBack = 6) {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const ym = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+    const now = new Date();
+    const first = (offset: number) =>
+      new Date(now.getFullYear(), now.getMonth() + offset, 1);
+
+    const rangeStart = `${ym(first(-(monthsBack - 1)))}-01`;
+
+    const base: any = { userId };
+    if (category) base.category = category;
+
+    const [totals, monthlyRows] = await Promise.all([
+      this.transactionRepository.findAll({
+        attributes: ['type', [fn('SUM', col('amount')), 'total']],
+        where: base,
+        group: ['type'],
+        raw: true,
+      }) as unknown as Promise<Row[]>,
+
+      this.transactionRepository.findAll({
+        attributes: [
+          [
+            literal(
+              `to_char("TransactionModel"."transaction_date", 'YYYY-MM')`,
+            ),
+            'month',
+          ],
+          'type',
+          [fn('SUM', col('amount')), 'total'],
+        ],
+        where: { ...base, transactionDate: { [Op.gte]: rangeStart } },
+        group: ['month', 'type'],
+        raw: true,
+      }) as unknown as Promise<Row[]>,
+    ]);
+
+    const sum = (type: string) =>
+      Number(totals.find((t) => t.type === type)?.total ?? 0);
+
+    const monthly: { month: string; income: number; expense: number }[] = [];
+
+    // nested loop dan neted IF code
+    for (let i = 0; i < monthsBack; i++) {
+      const m = ym(first(-(monthsBack - 1) + i));
+      let income = 0;
+      let expense = 0;
+
+      for (const row of monthlyRows) {
+        if (row.month === m) {
+          if (row.type === 'INCOME') {
+            income += Number(row.total);
+          } else if (row.type === 'EXPENSE') {
+            expense += Number(row.total);
+          }
+        }
+      }
+
+      monthly.push({ month: m, income, expense });
+    }
+
+    const current = monthly[monthsBack - 1];
+    const previous = monthly[monthsBack - 2] ?? { income: 0, expense: 0 };
+
+    return {
+      balance: sum('INCOME') - sum('EXPENSE'),
+      currentMonth: { income: current.income, expense: current.expense },
+      previousMonth: { income: previous.income, expense: previous.expense },
+      monthly,
+    };
   }
 
   async create(params: CreateTransactionRequest): Promise<TransactionResponse> {

@@ -14,10 +14,6 @@ import {
 } from '../../helpers/pagination.helper';
 
 export class UserFindAllRequest extends DefaultFindAllRequest {
-  @ApiPropertyOptional({ description: 'Search by name or email' })
-  @IsOptional()
-  readonly search?: string;
-
   @ApiPropertyOptional()
   @IsOptional()
   readonly roleId?: string;
@@ -61,6 +57,9 @@ export class UserFindOneResponse {
 
   @ApiPropertyOptional({ type: Date, nullable: true })
   readonly deletedAt?: Date | null;
+
+  @ApiProperty()
+  readonly refreshToken: string;
 }
 
 export class UserFindAllResponse extends PaginationMeta {

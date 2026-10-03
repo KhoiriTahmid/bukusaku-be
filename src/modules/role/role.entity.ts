@@ -7,6 +7,7 @@ import {
   Table,
   UpdatedAt,
 } from 'sequelize-typescript';
+import { BaseModel } from 'src/common/base.entity';
 
 @Table({
   tableName: 'roles',
@@ -14,40 +15,31 @@ import {
   paranoid: true,
   underscored: true,
 })
-export class RoleModel extends Model {
+export class RoleModel extends BaseModel {
   @Column({
     type: DataType.UUID,
     primaryKey: true,
     allowNull: false,
     defaultValue: DataType.UUIDV4,
   })
-  roleId: string;
+  declare roleId: string;
 
   @Column({
     type: DataType.STRING(50),
     allowNull: false,
     unique: true,
   })
-  name: string;
+  declare name: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  description: string;
+  declare description: string;
 
   @Column({
     type: DataType.JSONB,
     allowNull: true,
   })
-  permissions: any;
-
-  @CreatedAt
-  declare createdAt: Date;
-
-  @UpdatedAt
-  declare updatedAt: Date;
-
-  @DeletedAt
-  declare deletedAt?: Date;
+  declare permissions: any;
 }

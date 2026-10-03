@@ -13,10 +13,20 @@ import {
   PaginationMeta,
 } from '../../helpers/pagination.helper';
 
+export class TransactionSummaryRequest {
+  @ApiPropertyOptional({ description: 'Limit the summary to one category' })
+  @IsOptional()
+  @IsString()
+  readonly category?: string;
+}
 export class TransactionFindAllRequest extends DefaultFindAllRequest {
   @ApiPropertyOptional()
   @IsOptional()
   readonly userId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  readonly category?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

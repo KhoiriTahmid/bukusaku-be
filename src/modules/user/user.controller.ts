@@ -10,8 +10,15 @@ import {
   Patch,
   Post,
   Query,
+  Request,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 
 import {
   UserActionResponse,
@@ -23,6 +30,9 @@ import {
 } from './user.contract';
 
 import { UserService } from './user.service';
+import { AuthGuard } from '@nestjs/passport';
+import { PermissionsGuard } from '../authentication/guards/permissions.guard';
+import { Permissions } from '../authentication/decorators/permissions.decorator';
 
 const CONTEXT = 'user.controller';
 
@@ -34,6 +44,9 @@ export class UserController {
   @ApiOperation({ summary: 'Get all users' })
   @Get()
   @ApiOkResponse({ type: UserFindAllResponse })
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @Permissions('USERS.LIST')
   async findAll(
     @Query() params: UserFindAllRequest,
   ): Promise<UserFindAllResponse> {
@@ -54,6 +67,9 @@ export class UserController {
   @ApiOperation({ summary: 'Get one user' })
   @Get(':userId')
   @ApiOkResponse({ type: UserFindOneResponse })
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @Permissions('USERS.LIST')
   async findOne(@Param('userId') userId: string): Promise<UserFindOneResponse> {
     try {
       Logger.log('--ENTER FIND ONE USER--', CONTEXT);
@@ -72,13 +88,17 @@ export class UserController {
   @ApiOperation({ summary: 'Create new user' })
   @Post()
   @ApiOkResponse({ type: UserFindOneResponse })
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @Permissions('USERS.CREATE')
   async create(
     @Body() params: UserCreateRequest,
+    @Request() req,
   ): Promise<UserFindOneResponse> {
     try {
       Logger.log('--ENTER CREATE USER--', CONTEXT);
 
-      return await this.userService.create(params);
+      return await this.userService.create(params, req.user.userId, req.user);
     } catch (error) {
       Logger.error('Create user error: ' + JSON.stringify(error), CONTEXT);
 
@@ -92,14 +112,23 @@ export class UserController {
   @ApiOperation({ summary: 'Update user' })
   @Patch(':userId')
   @ApiOkResponse({ type: UserFindOneResponse })
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @Permissions('USERS.UPDATE')
   async update(
     @Param('userId') userId: string,
     @Body() params: UserUpdateRequest,
+    @Request() req,
   ): Promise<UserFindOneResponse> {
     try {
       Logger.log('--ENTER UPDATE USER--', CONTEXT);
 
-      return await this.userService.update(userId, params);
+      return await this.userService.update(
+        userId,
+        params,
+        req.user.userId,
+        req.user,
+      );
     } catch (error) {
       Logger.error('Update user error: ' + JSON.stringify(error), CONTEXT);
 
@@ -113,11 +142,21 @@ export class UserController {
   @ApiOperation({ summary: 'Restore archived user' })
   @Post(':userId/restore')
   @ApiOkResponse({ type: UserActionResponse })
-  async restore(@Param('userId') userId: string): Promise<UserActionResponse> {
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @Permissions('USERS.DELETE')
+  async restore(
+    @Param('userId') userId: string,
+    @Request() req,
+  ): Promise<UserActionResponse> {
     try {
       Logger.log('--ENTER RESTORE USER--', CONTEXT);
 
-      const result = await this.userService.restore(userId);
+      const result = await this.userService.restore(
+        userId,
+        req.user.userId,
+        req.user,
+      );
 
       Logger.log(
         'User restored successfully: ' + JSON.stringify(result),
@@ -140,7 +179,11 @@ export class UserController {
   })
   @Delete(':userId')
   @ApiOkResponse({ type: UserActionResponse })
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @Permissions('USERS.DELETE')
   async delete(
+    @Request() req,
     @Param('userId') userId: string,
     @Query('forceDelete') forceDelete?: string,
   ): Promise<UserActionResponse> {
@@ -149,7 +192,12 @@ export class UserController {
 
       const isForceDelete = String(forceDelete) === 'true';
 
-      const result = await this.userService.delete(userId, isForceDelete);
+      const result = await this.userService.delete(
+        userId,
+        isForceDelete,
+        req.user.userId,
+        req.user,
+      );
 
       Logger.log(
         'User deleted successfully: ' + JSON.stringify(result),

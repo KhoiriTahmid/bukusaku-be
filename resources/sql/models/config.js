@@ -67,19 +67,8 @@ module.exports = {
     seederStorage: 'sequelize',
   },
   production: {
-    username: process.env.DB_USER,
-    password: process.env.DB_PASS,
-    database: process.env.DB_NAME,
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || '5432'),
+    use_env_variable: 'DATABASE_URL',
     dialect: 'postgres',
-
-    pool: {
-      min: 0,
-      max: 10,
-      acquire: 10,
-      idle: 5,
-    },
-    seederStorage: 'sequelize',
+    dialectOptions: { ssl: { require: true, rejectUnauthorized: false } },
   },
 };

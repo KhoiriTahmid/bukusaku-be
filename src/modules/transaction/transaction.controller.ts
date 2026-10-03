@@ -10,8 +10,15 @@ import {
   Patch,
   Post,
   Query,
+  Request,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 
 import {
   CreateTransactionRequest,
@@ -20,10 +27,14 @@ import {
   TransactionFindAllRequest,
   TransactionFindAllResponse,
   TransactionResponse,
+  TransactionSummaryRequest,
   UpdateTransactionRequest,
 } from './transaction.contract';
 
 import { TransactionService } from './transaction.service';
+import { AuthGuard } from '@nestjs/passport';
+import { PermissionsGuard } from '../authentication/guards/permissions.guard';
+import { Permissions } from '../authentication/decorators/permissions.decorator';
 
 const CONTEXT = 'transaction.controller';
 
@@ -35,6 +46,9 @@ export class TransactionController {
   @ApiOperation({ summary: 'Get all transactions' })
   @Get()
   @ApiOkResponse({ type: TransactionFindAllResponse })
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @Permissions('TRANSACTIONS.LIST')
   async findAll(
     @Query() params: TransactionFindAllRequest,
   ): Promise<TransactionFindAllResponse> {
@@ -55,9 +69,21 @@ export class TransactionController {
     }
   }
 
+  @Get('summary')
+  @ApiOperation({ summary: 'Dashboard summary for the logged-in user' })
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @Permissions('TRANSACTIONS.LIST')
+  summary(@Request() req, @Query() query: TransactionSummaryRequest) {
+    return this.transactionService.getSummary(req.user.userId, query.category);
+  }
+
   @ApiOperation({ summary: 'Get one transaction' })
   @Get(':transactionId')
   @ApiOkResponse({ type: TransactionResponse })
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @Permissions('TRANSACTIONS.LIST')
   async findOne(
     @Param('transactionId') transactionId: string,
   ): Promise<TransactionResponse> {
@@ -81,6 +107,9 @@ export class TransactionController {
   @ApiOperation({ summary: 'Create new transaction' })
   @Post()
   @ApiOkResponse({ type: TransactionResponse })
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @Permissions('TRANSACTIONS.CREATE')
   async create(
     @Body() params: CreateTransactionRequest,
   ): Promise<TransactionResponse> {
@@ -104,6 +133,9 @@ export class TransactionController {
   @ApiOperation({ summary: 'Update transaction' })
   @Patch(':transactionId')
   @ApiOkResponse({ type: TransactionResponse })
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @Permissions('TRANSACTIONS.UPDATE')
   async update(
     @Param('transactionId') transactionId: string,
     @Body() params: UpdateTransactionRequest,
@@ -128,6 +160,9 @@ export class TransactionController {
   @ApiOperation({ summary: 'Restore archived transaction' })
   @Post(':transactionId/restore')
   @ApiOkResponse({ type: TransactionActionResponse })
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @Permissions('TRANSACTIONS.DELETE')
   async restore(
     @Param('transactionId') transactionId: string,
   ): Promise<TransactionActionResponse> {
@@ -160,6 +195,9 @@ export class TransactionController {
   })
   @Delete(':transactionId')
   @ApiOkResponse({ type: TransactionActionResponse })
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @Permissions('TRANSACTIONS.DELETE')
   async delete(
     @Param('transactionId') transactionId: string,
     @Query('forceDelete') forceDelete?: string,

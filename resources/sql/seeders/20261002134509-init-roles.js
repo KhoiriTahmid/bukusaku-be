@@ -13,7 +13,7 @@ module.exports = {
         role_id: ROLE_ADMIN_ID,
         name: 'Super Admin',
         description: 'Super Admin',
-        permissions: JSON.stringify({ FULL_ACCESS: 'TRUE' }),
+        permissions: JSON.stringify({ FULL_ACCESS: true }),
         created_at: now,
         updated_at: now,
       },

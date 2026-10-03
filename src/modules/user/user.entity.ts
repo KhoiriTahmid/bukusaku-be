@@ -10,6 +10,7 @@ import {
   UpdatedAt,
 } from 'sequelize-typescript';
 import { RoleModel } from '../role/role.entity';
+import { BaseModel } from 'src/common/base.entity';
 
 @Table({
   tableName: 'users',
@@ -17,50 +18,47 @@ import { RoleModel } from '../role/role.entity';
   paranoid: true,
   underscored: true,
 })
-export class UserModel extends Model {
+export class UserModel extends BaseModel {
   @Column({
     type: DataType.UUID,
     primaryKey: true,
     allowNull: false,
     defaultValue: DataType.UUIDV4,
   })
-  userId: string;
+  declare userId: string;
 
   @ForeignKey(() => RoleModel)
   @Column({
     type: DataType.UUID,
     allowNull: false,
   })
-  roleId: string;
+  declare roleId: string;
 
   @BelongsTo(() => RoleModel)
-  role: RoleModel;
+  declare role: RoleModel;
 
   @Column({
     type: DataType.STRING(100),
     allowNull: false,
   })
-  name: string;
+  declare name: string;
 
   @Column({
     type: DataType.STRING(100),
     allowNull: false,
     unique: true,
   })
-  email: string;
+  declare email: string;
 
   @Column({
     type: DataType.STRING(255),
     allowNull: false,
   })
-  password: string;
+  declare password: string;
 
-  @CreatedAt
-  declare createdAt: Date;
-
-  @UpdatedAt
-  declare updatedAt: Date;
-
-  @DeletedAt
-  declare deletedAt?: Date;
+  @Column({
+    type: DataType.STRING(255),
+    allowNull: true,
+  })
+  declare refreshToken: string | null;
 }
